@@ -1,0 +1,819 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, collection, addDoc, query, onSnapshot, 
+  doc, setDoc, updateDoc, serverTimestamp, getDocs
+} from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { 
+  AlertTriangle, CheckCircle, Clock, FileText, Lock, 
+  User, RefreshCw, LogOut, Eye, Download, ShieldAlert,
+  BookOpen, Calculator, Sigma, Users, Activity
+} from 'lucide-react';
+
+/* KONFIGURASI FIREBASE 
+  Pastikan Auth dan Firestore Database aktif di console Firebase.
+*/
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'smk-putra-bahari';
+
+// --- DATA SOAL (20 SOAL - 5 Eksponen, 7 Akar, 8 Barisan) ---
+const QUESTIONS = [
+  // --- EKSPONEN (5 Soal) ---
+  {
+    id: 1, type: 'Eksponen', level: 'Mudah',
+    text: 'Hasil dari 2⁵ × 2³ adalah...',
+    options: ['2⁸', '2¹⁵', '4⁸', '2²', '4¹⁵'],
+    answer: '2⁸'
+  },
+  {
+    id: 2, type: 'Eksponen', level: 'Mudah',
+    text: 'Bentuk sederhana dari (a²)³ adalah...',
+    options: ['a⁵', 'a⁶', 'a⁸', 'a¹', 'a⁻¹'],
+    answer: 'a⁶'
+  },
+  {
+    id: 3, type: 'Eksponen', level: 'Sedang',
+    text: 'Jika a = 2 dan b = 3, maka nilai dari a³ . b² adalah...',
+    options: ['36', '72', '54', '18', '24'],
+    answer: '72'
+  },
+  {
+    id: 4, type: 'Eksponen', level: 'Sedang',
+    text: 'Bentuk sederhana dari (x⁻² y³)² adalah...',
+    options: ['x⁻⁴ y⁶', 'x⁰ y⁵', 'x⁴ y⁶', 'x² y³', 'x⁻⁴ y⁵'],
+    answer: 'x⁻⁴ y⁶'
+  },
+  {
+    id: 5, type: 'Eksponen', level: 'Sukar',
+    text: 'Nilai x yang memenuhi persamaan 3²ˣ⁻¹ = 27 adalah...',
+    options: ['1', '2', '3', '4', '5'],
+    answer: '2'
+  },
+  // --- BENTUK AKAR (7 Soal) ---
+  {
+    id: 6, type: 'Akar', level: 'Mudah',
+    text: 'Bentuk sederhana dari √12 adalah...',
+    options: ['2√3', '3√2', '4√3', '2√2', '3√3'],
+    answer: '2√3'
+  },
+  {
+    id: 7, type: 'Akar', level: 'Mudah',
+    text: 'Hasil dari 3√5 + 2√5 adalah...',
+    options: ['5√10', '5√5', '6√5', '√5', '5'],
+    answer: '5√5'
+  },
+  {
+    id: 8, type: 'Akar', level: 'Sedang',
+    text: 'Hasil dari √8 × √3 adalah...',
+    options: ['2√6', '3√6', '4√6', '√24', '2√3'],
+    answer: '2√6'
+  },
+  {
+    id: 9, type: 'Akar', level: 'Sedang',
+    text: 'Hasil dari √18 + √50 - √72 adalah...',
+    options: ['2√2', '3√2', '4√2', '5√2', '√2'],
+    answer: '2√2'
+  },
+  {
+    id: 10, type: 'Akar', level: 'Sedang',
+    text: 'Bentuk rasional dari pecahan 6/√3 adalah...',
+    options: ['3√3', '2√3', '6√3', '√3', '2'],
+    answer: '2√3'
+  },
+  {
+    id: 11, type: 'Akar', level: 'Sukar',
+    text: 'Bentuk rasional dari 4 / (3 + √5) adalah...',
+    options: ['3 - √5', '3 + √5', '4(3 - √5)', '1', '2(3 - √5)'],
+    answer: '3 - √5'
+  },
+  {
+    id: 12, type: 'Akar', level: 'Sukar',
+    text: 'Luas persegi panjang dengan panjang (√5 + √2) cm dan lebar (√5 - √2) cm adalah...',
+    options: ['3 cm²', '7 cm²', '5 cm²', '2 cm²', '10 cm²'],
+    answer: '3 cm²'
+  },
+  // --- BARISAN ARITMATIKA (8 Soal) ---
+  {
+    id: 13, type: 'Barisan', level: 'Mudah',
+    text: 'Diketahui barisan aritmatika: 2, 5, 8, 11, ... Suku selanjutnya adalah...',
+    options: ['12', '13', '14', '15', '16'],
+    answer: '14'
+  },
+  {
+    id: 14, type: 'Barisan', level: 'Mudah',
+    text: 'Beda (b) dari barisan aritmatika 10, 6, 2, -2, ... adalah...',
+    options: ['4', '-4', '2', '-2', '8'],
+    answer: '-4'
+  },
+  {
+    id: 15, type: 'Barisan', level: 'Sedang',
+    text: 'Rumus suku ke-n dari barisan 3, 7, 11, 15, ... adalah...',
+    options: ['4n - 1', '4n + 1', '3n + 1', '3n', 'n + 4'],
+    answer: '4n - 1'
+  },
+  {
+    id: 16, type: 'Barisan', level: 'Sedang',
+    text: 'Suku ke-10 dari barisan aritmatika 5, 10, 15, ... adalah...',
+    options: ['45', '50', '55', '60', '65'],
+    answer: '50'
+  },
+  {
+    id: 17, type: 'Barisan', level: 'Sedang',
+    text: 'Diketahui suku ke-3 = 11 dan suku ke-7 = 23. Beda barisan tersebut adalah...',
+    options: ['2', '3', '4', '5', '6'],
+    answer: '3'
+  },
+  {
+    id: 18, type: 'Barisan', level: 'Sukar',
+    text: 'Jumlah 10 suku pertama (S10) dari deret 2 + 4 + 6 + ... adalah...',
+    options: ['100', '110', '120', '90', '130'],
+    answer: '110'
+  },
+  {
+    id: 19, type: 'Barisan', level: 'Sukar',
+    text: 'Dalam gedung pertunjukan, baris pertama ada 20 kursi, baris kedua 24, baris ketiga 28. Banyak kursi pada baris ke-10 adalah...',
+    options: ['50', '56', '60', '64', '68'],
+    answer: '56'
+  },
+  {
+    id: 20, type: 'Barisan', level: 'Sukar',
+    text: 'Seutas tali dipotong menjadi 5 bagian membentuk barisan aritmatika. Jika potongan terpendek 5 cm dan terpanjang 25 cm, panjang tali semula adalah...',
+    options: ['60 cm', '70 cm', '75 cm', '80 cm', '90 cm'],
+    answer: '75 cm'
+  }
+];
+
+const CLASSES = ['X NAUTIKA', 'X TEKNIK', 'X ANALIS', 'X FARMASI', 'X PERAWAT'];
+
+export default function App() {
+  // State Global
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('login'); // login, exam, result, teacher
+  const [loading, setLoading] = useState(true);
+
+  // State Siswa
+  const [studentData, setStudentData] = useState({
+    fullName: '',
+    className: '',
+    password: ''
+  });
+  const [currentAttempt, setCurrentAttempt] = useState(1);
+  const [timeLeft, setTimeLeft] = useState(90 * 60); // 90 menit dalam detik
+  const [answers, setAnswers] = useState({});
+  const [score, setScore] = useState(0);
+  const [passed, setPassed] = useState(false);
+  const [fraudCount, setFraudCount] = useState(0);
+  const [examActive, setExamActive] = useState(false);
+  const [canReview, setCanReview] = useState(false);
+
+  // State Guru
+  const [teacherPass, setTeacherPass] = useState('');
+  const [studentsList, setStudentsList] = useState([]);
+
+  // Refs
+  const timerRef = useRef(null);
+  const fraudRef = useRef(0);
+  
+  // --- AUTH & INIT ---
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- LOGIC SISWA: LOGIN & MULAI ---
+  const handleStudentLogin = async () => {
+    if (!studentData.fullName || !studentData.className) {
+      alert("Mohon lengkapi nama dan kelas.");
+      return;
+    }
+    if (studentData.password !== 'MAT10') {
+      alert("Password Salah!");
+      return;
+    }
+
+    if (!user) return;
+
+    setLoading(true);
+    // Cek data siswa di Firestore
+    const userDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
+    
+    // Simpan/Update profil
+    await setDoc(userDocRef, {
+      fullName: studentData.fullName,
+      className: studentData.className,
+      lastLogin: serverTimestamp(),
+      role: 'student'
+    }, { merge: true });
+
+    // Cek riwayat ujian
+    const historyRef = collection(db, 'artifacts', appId, 'users', user.uid, 'exam_history');
+    const snapshot = await getDocs(historyRef);
+    const attempts = snapshot.docs.length;
+
+    // Hitung status kelulusan dari riwayat
+    let isPassed = false;
+    let maxScore = 0;
+    snapshot.forEach(doc => {
+      if (doc.data().score >= 75) isPassed = true;
+      if (doc.data().score > maxScore) maxScore = doc.data().score;
+    });
+
+    if (isPassed) {
+      setScore(maxScore);
+      setPassed(true);
+      setCanReview(true);
+      // Ambil jawaban dari attempt terbaik untuk review (penyederhanaan: ambil yg terakhir lulus)
+      const passedAttempt = snapshot.docs.find(d => d.data().score >= 75);
+      if(passedAttempt) setAnswers(passedAttempt.data().answers);
+      setView('result');
+    } else if (attempts >= 3) {
+      alert("Anda telah mencapai batas maksimal 3 kali percobaan.");
+      setView('login'); // Atau halaman khusus 'Gagal'
+    } else {
+      setCurrentAttempt(attempts + 1);
+      startExam();
+    }
+    setLoading(false);
+  };
+
+  const startExam = async () => {
+    // 1. Request Fullscreen saat mulai
+    try {
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      } else if (document.documentElement.webkitRequestFullscreen) { /* Safari */
+        await document.documentElement.webkitRequestFullscreen();
+      }
+    } catch (e) {
+      console.log("Fullscreen denied or not supported", e);
+      alert("Mohon izinkan mode Full Screen untuk memulai ujian.");
+    }
+
+    setExamActive(true);
+    setView('exam');
+    setAnswers({});
+    setFraudCount(0);
+    fraudRef.current = 0;
+    setTimeLeft(90 * 60);
+    
+    // Update status ke Guru (via public collection untuk monitoring live)
+    // Kita gunakan ID unik gabungan nama dan kelas agar guru bisa track
+    const trackingId = `${studentData.className}_${studentData.fullName}`.replace(/\s+/g, '_');
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'live_tracking', trackingId), {
+      name: studentData.fullName,
+      class: studentData.className,
+      status: 'ONLINE - UJIAN',
+      fraud: 0,
+      attempt: currentAttempt,
+      score: 0,
+      passed: false,
+      timestamp: serverTimestamp()
+    });
+  };
+
+  // --- LOGIC SISWA: SELAMA UJIAN ---
+  useEffect(() => {
+    if (!examActive) return;
+
+    // Timer
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          handleSubmitExam();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Anti-Cheat: Visibility Change (Tab Switching)
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        fraudRef.current += 1;
+        setFraudCount(fraudRef.current);
+        alert(`PERINGATAN! Anda meninggalkan halaman ujian. Kecurangan terdeteksi: ${fraudRef.current} kali.`);
+        // Update fraud ke Firestore live tracking
+        if(user) {
+             const trackingId = `${studentData.className}_${studentData.fullName}`.replace(/\s+/g, '_');
+             updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'live_tracking', trackingId), {
+               fraud: fraudRef.current,
+               status: 'MENCURIGAKAN'
+             }).catch(e => console.log(e));
+        }
+      }
+    };
+
+    // Anti-Cheat: Prevent Context Menu
+    const handleContextMenu = (e) => e.preventDefault();
+    
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("contextmenu", handleContextMenu);
+
+    return () => {
+      clearInterval(timerRef.current);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("contextmenu", handleContextMenu);
+    };
+  }, [examActive]);
+
+  const handleAnswer = (qId, val) => {
+    setAnswers(prev => ({ ...prev, [qId]: val }));
+  };
+
+  const handleSubmitExam = async () => {
+    clearInterval(timerRef.current);
+    setExamActive(false);
+    
+    // 2. Exit Fullscreen saat selesai/kirim jawaban
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch(e){}
+    }
+
+    // Hitung Nilai
+    let correctCount = 0;
+    QUESTIONS.forEach(q => {
+      if (answers[q.id] === q.answer) correctCount++;
+    });
+    const finalScore = correctCount * 5;
+    const isPassed = finalScore >= 75;
+
+    setScore(finalScore);
+    setPassed(isPassed);
+    setCanReview(isPassed);
+
+    // Simpan Hasil ke Private History
+    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'exam_history'), {
+      attempt: currentAttempt,
+      score: finalScore,
+      answers: answers,
+      fraudCount: fraudRef.current,
+      passed: isPassed,
+      timestamp: serverTimestamp()
+    });
+
+    // Update Live Tracking untuk Guru
+    const trackingId = `${studentData.className}_${studentData.fullName}`.replace(/\s+/g, '_');
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'live_tracking', trackingId), {
+      status: isPassed ? 'SELESAI - TUNTAS' : 'SELESAI - REMEDIAL',
+      score: finalScore,
+      passed: isPassed,
+      finalFraud: fraudRef.current
+    });
+
+    setView('result');
+  };
+
+  // --- LOGIC GURU ---
+  const handleTeacherLogin = () => {
+    if (teacherPass === 'RF 1409') {
+      setView('teacher');
+      loadStudentsLive();
+    } else {
+      alert("Password Guru Salah");
+    }
+  };
+
+  const loadStudentsLive = () => {
+    if (!user) return;
+    // Listen ke koleksi live_tracking
+    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'live_tracking'));
+    onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Urutkan: Yang sedang ujian/mencurigakan di atas, selesai di bawah
+      data.sort((a, b) => {
+        const isAActive = a.status.includes('UJIAN') || a.status.includes('MENCURIGAKAN');
+        const isBActive = b.status.includes('UJIAN') || b.status.includes('MENCURIGAKAN');
+        if (isAActive && !isBActive) return -1;
+        if (!isAActive && isBActive) return 1;
+        return 0;
+      });
+      setStudentsList(data);
+    }, (error) => console.log("Teacher monitor error:", error));
+  };
+
+  const downloadCSV = () => {
+    const headers = "Nama,Kelas,Status,Percobaan Ke,Nilai,Tuntas,Kecurangan\n";
+    const rows = studentsList.map(s => 
+      `"${s.name}","${s.class}","${s.status}",${s.attempt},${s.score},${s.passed ? 'YA' : 'TIDAK'},${s.fraud}`
+    ).join("\n");
+    
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Nilai_Sumatif_Matematika_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
+
+  // --- FORMAT TIMER ---
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // --- RENDER HELPERS ---
+  const MaterialCard = ({ title, icon, content }) => (
+    <div className="bg-white/90 backdrop-blur p-4 rounded-xl shadow-md border border-teal-100 hover:shadow-lg transition-all">
+      <div className="flex items-center gap-2 mb-2 text-teal-700 font-bold text-lg">
+        {icon} <h3>{title}</h3>
+      </div>
+      <p className="text-gray-600 text-sm leading-relaxed">{content}</p>
+    </div>
+  );
+
+  // --- HALAMAN ---
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-teal-50 text-teal-600">Memuat Aplikasi Ujian...</div>;
+
+  // 1. HALAMAN LOGIN
+  if (view === 'login') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-cyan-500 to-blue-600 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row">
+          
+          {/* Sisi Kiri: Form Login */}
+          <div className="p-8 md:w-1/2 flex flex-col justify-center">
+            <div className="text-center mb-8">
+              <h1 className="text-2xl font-bold text-gray-800">SMKS PUTRA BAHARI</h1>
+              <p className="text-gray-500">KOTA TERNATE</p>
+              <div className="mt-4 inline-block bg-teal-100 text-teal-700 px-4 py-1 rounded-full text-sm font-semibold">
+                UJIAN SUMATIF MATEMATIKA
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <input 
+                    type="text" 
+                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"
+                    placeholder="Masukkan nama lengkap..."
+                    value={studentData.fullName}
+                    onChange={e => setStudentData({...studentData, fullName: e.target.value.toUpperCase()})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Kelas / Jurusan</label>
+                <select 
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 outline-none bg-white"
+                  value={studentData.className}
+                  onChange={e => setStudentData({...studentData, className: e.target.value})}
+                >
+                  <option value="">Pilih Kelas...</option>
+                  {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password Ujian</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <input 
+                    type="password" 
+                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"
+                    placeholder="Masukkan password..."
+                    value={studentData.password}
+                    onChange={e => setStudentData({...studentData, password: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <button 
+                onClick={handleStudentLogin}
+                className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 rounded-lg transition-colors shadow-lg"
+              >
+                MULAI UJIAN
+              </button>
+            </div>
+
+            {/* Login Guru Tersembunyi */}
+            <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+              <details className="cursor-pointer group">
+                <summary className="text-xs text-gray-400 list-none group-hover:text-teal-600 transition-colors">Akses Guru Pengawas</summary>
+                <div className="mt-2 flex gap-2">
+                  <input 
+                    type="password" 
+                    placeholder="Kode Guru" 
+                    className="border rounded px-2 py-1 text-sm flex-1"
+                    value={teacherPass}
+                    onChange={e => setTeacherPass(e.target.value)}
+                  />
+                  <button onClick={handleTeacherLogin} className="bg-gray-800 text-white px-3 py-1 rounded text-sm">Masuk</button>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          {/* Sisi Kanan: Materi Singkat */}
+          <div className="bg-teal-50 md:w-1/2 p-8 flex flex-col gap-4 overflow-y-auto">
+            <h2 className="text-xl font-bold text-teal-800 mb-2 border-b border-teal-200 pb-2">Ringkasan Materi</h2>
+            
+            <MaterialCard 
+              title="Sifat Eksponen" 
+              icon={<BookOpen size={20}/>}
+              content="Eksponen adalah perkalian berulang. Sifat utama: aᵐ × aⁿ = aᵐ⁺ⁿ, (aᵐ)ⁿ = aᵐⁿ, dan a⁻ⁿ = 1/aⁿ. Ingat bahwa a⁰ = 1."
+            />
+            
+            <MaterialCard 
+              title="Bentuk Akar" 
+              icon={<Calculator size={20}/>}
+              content="Bentuk akar adalah kebalikan eksponen pecahan. Menyederhanakan akar: √12 = √(4×3) = 2√3. Merasionalkan penyebut: kalikan dengan akar sekawan."
+            />
+            
+            <MaterialCard 
+              title="Barisan Aritmatika" 
+              icon={<Sigma size={20}/>}
+              content="Pola bilangan dengan beda (b) tetap. Rumus suku ke-n: Un = a + (n-1)b. Rumus jumlah n suku pertama: Sn = n/2 (a + Un)."
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. HALAMAN UJIAN (FULL SCREEN BLOCKED)
+  if (view === 'exam') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col select-none">
+        {/* Header Fixed */}
+        <header className="bg-white shadow-md p-4 flex justify-between items-center sticky top-0 z-50">
+          <div>
+            <h2 className="font-bold text-gray-800">{studentData.fullName}</h2>
+            <p className="text-xs text-gray-500">{studentData.className}</p>
+          </div>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono font-bold text-xl ${timeLeft < 300 ? 'bg-red-100 text-red-600' : 'bg-teal-100 text-teal-700'}`}>
+            <Clock size={24} />
+            {formatTime(timeLeft)}
+          </div>
+        </header>
+
+        {/* Soal Container */}
+        <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full">
+          <div className="space-y-6">
+            {QUESTIONS.map((q, index) => (
+              <div key={q.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <div className="flex justify-between mb-4">
+                  <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">No. {index + 1}</span>
+                  <span className={`text-xs px-2 py-1 rounded ${q.level === 'Mudah' ? 'bg-green-100 text-green-700' : q.level === 'Sedang' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                    {q.type} - {q.level}
+                  </span>
+                </div>
+                
+                <p className="text-lg text-gray-800 mb-4 font-medium">{q.text}</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  {q.options.map((opt, optIdx) => (
+                    <button
+                      key={optIdx}
+                      onClick={() => handleAnswer(q.id, opt)}
+                      className={`p-3 text-left rounded-lg border transition-all ${
+                        answers[q.id] === opt 
+                          ? 'bg-teal-600 text-white border-teal-600 shadow-md transform scale-105' 
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="font-bold mr-2">{String.fromCharCode(65 + optIdx)}.</span>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex justify-end pb-12">
+            <button 
+              onClick={() => {
+                if(Object.keys(answers).length < 20) {
+                  if(!confirm("Masih ada soal yang belum dijawab. Yakin ingin mengumpulkan?")) return;
+                } else {
+                  if(!confirm("Yakin ingin menyelesaikan ujian?")) return;
+                }
+                handleSubmitExam();
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl font-bold shadow-xl flex items-center gap-2"
+            >
+              <CheckCircle /> KIRIM JAWABAN
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // 3. HALAMAN HASIL
+  if (view === 'result') {
+    return (
+      <div className="min-h-screen bg-gray-100 p-4 flex justify-center items-start pt-10">
+        <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className={`p-8 text-center text-white ${passed ? 'bg-gradient-to-r from-green-500 to-teal-600' : 'bg-gradient-to-r from-red-500 to-pink-600'}`}>
+            <h1 className="text-3xl font-bold mb-2">{passed ? 'SELAMAT! ANDA TUNTAS' : 'BELUM TUNTAS'}</h1>
+            <div className="text-6xl font-extrabold my-4">{score}</div>
+            <p className="opacity-90">KKM: 75</p>
+            {passed && (
+              <div className="mt-4 bg-white/20 inline-block px-4 py-1 rounded-full text-sm">
+                Kode Kelulusan: {`LULUS-${studentData.className.split(' ')[1]}-${Math.floor(Math.random()*1000)}`}
+              </div>
+            )}
+          </div>
+
+          <div className="p-8">
+            <div className="flex justify-between items-center mb-6 text-sm text-gray-600 border-b pb-4">
+              <span>Nama: <span className="font-bold text-gray-900">{studentData.fullName}</span></span>
+              <span>Percobaan Ke: <span className="font-bold text-gray-900">{currentAttempt}/3</span></span>
+            </div>
+
+            {passed ? (
+              <div className="space-y-6">
+                <div className="bg-green-50 border border-green-200 p-4 rounded-lg flex items-center gap-3">
+                  <CheckCircle className="text-green-600" />
+                  <p className="text-green-800 text-sm">Anda telah mencapai ketuntasan belajar. Berikut adalah review jawaban Anda.</p>
+                </div>
+                
+                {/* REVIEW JAWABAN */}
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                  {QUESTIONS.map((q, idx) => {
+                    const isCorrect = answers[q.id] === q.answer;
+                    return (
+                      <div key={idx} className={`p-4 rounded-lg border ${isCorrect ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                        <div className="flex gap-2 mb-2">
+                          <span className="font-bold text-gray-700">{idx+1}.</span>
+                          <p className="text-gray-800 text-sm font-medium">{q.text}</p>
+                        </div>
+                        <div className="ml-6 text-sm">
+                          <p className="text-gray-500">Jawaban Anda: <span className={isCorrect ? "font-bold text-green-700" : "font-bold text-red-700"}>{answers[q.id]} {isCorrect ? '✅' : '❌'}</span></p>
+                          {!isCorrect && <p className="text-teal-700 mt-1">Jawaban Benar: {q.answer} ⭐</p>}
+                          {isCorrect && <p className="text-teal-700 mt-1">Jawaban Benar: {q.answer} ⭐</p>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                <h3 className="text-xl font-bold text-gray-800 mb-2">Mohon Maaf</h3>
+                <p className="text-gray-600 mb-6">Nilai Anda belum mencapai standar ketuntasan. Anda tidak dapat melihat review jawaban.</p>
+                
+                {currentAttempt < 3 ? (
+                  <button 
+                    onClick={() => {
+                      setView('login');
+                      setScore(0);
+                      setAnswers({});
+                    }}
+                    className="bg-teal-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-teal-700 transition"
+                  >
+                    COBA LAGI ({3 - currentAttempt} Kesempatan Tersisa)
+                  </button>
+                ) : (
+                  <div className="bg-red-100 text-red-800 p-4 rounded-lg">
+                    Kesempatan mengulang telah habis. Silakan hubungi Guru Mapel.
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="mt-8 pt-4 border-t flex justify-center">
+              <button onClick={() => location.reload()} className="flex items-center gap-2 text-gray-500 hover:text-gray-800">
+                <LogOut size={16} /> Keluar Aplikasi
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 4. DASHBOARD GURU
+  if (view === 'teacher') {
+    // Hitung Ringkasan Data
+    const activeStudents = studentsList.filter(s => s.status.includes('UJIAN') || s.status.includes('MENCURIGAKAN')).length;
+    const finishedStudents = studentsList.filter(s => s.status.includes('SELESAI')).length;
+
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col">
+        <div className="bg-slate-800 text-white p-4 shadow-lg flex justify-between items-center sticky top-0 z-50">
+          <div>
+            <h1 className="font-bold text-xl">MONITORING UJIAN</h1>
+            <p className="text-slate-400 text-xs">SMKS PUTRA BAHARI - Live Dashboard</p>
+          </div>
+          <div className="flex gap-3">
+             <button onClick={downloadCSV} className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded flex items-center gap-2 text-sm">
+               <Download size={16}/> Unduh Excel
+             </button>
+             <button onClick={() => setView('login')} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">
+               Keluar
+             </button>
+          </div>
+        </div>
+
+        <div className="p-6 overflow-auto space-y-6">
+          {/* Ringkasan Dashboard */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500 flex items-center gap-4">
+              <div className="bg-blue-100 p-3 rounded-full text-blue-600">
+                <Activity size={24} />
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm">Sedang Mengerjakan</p>
+                <p className="text-2xl font-bold text-gray-800">{activeStudents} Siswa</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-lg shadow border-l-4 border-green-500 flex items-center gap-4">
+              <div className="bg-green-100 p-3 rounded-full text-green-600">
+                <CheckCircle size={24} />
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm">Selesai Ujian</p>
+                <p className="text-2xl font-bold text-gray-800">{finishedStudents} Siswa</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-lg shadow border-l-4 border-slate-500 flex items-center gap-4">
+              <div className="bg-slate-100 p-3 rounded-full text-slate-600">
+                <Users size={24} />
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm">Total Terdata</p>
+                <p className="text-2xl font-bold text-gray-800">{studentsList.length} Siswa</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabel Monitoring */}
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-100 text-slate-600 text-sm uppercase font-bold">
+                <tr>
+                  <th className="p-4 border-b">Nama Siswa</th>
+                  <th className="p-4 border-b">Kelas</th>
+                  <th className="p-4 border-b">Status</th>
+                  <th className="p-4 border-b text-center">Percobaan</th>
+                  <th className="p-4 border-b text-center">Nilai</th>
+                  <th className="p-4 border-b text-center">Indikasi Curang</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {studentsList.length === 0 ? (
+                  <tr><td colSpan="6" className="p-8 text-center text-gray-500">Belum ada siswa yang login...</td></tr>
+                ) : (
+                  studentsList.map((s) => (
+                    <tr key={s.id} className="hover:bg-slate-50 transition">
+                      <td className="p-4 font-medium text-gray-800">{s.name}</td>
+                      <td className="p-4 text-gray-600 text-sm">{s.class}</td>
+                      <td className="p-4">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                          s.status.includes('TUNTAS') ? 'bg-green-100 text-green-700' :
+                          s.status.includes('UJIAN') ? 'bg-blue-100 text-blue-700 animate-pulse' :
+                          s.status.includes('MENCURIGAKAN') ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {s.status}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">{s.attempt}</td>
+                      <td className="p-4 text-center font-bold text-lg">{s.score}</td>
+                      <td className="p-4 text-center">
+                        {s.fraud > 0 ? (
+                          <div className="flex items-center justify-center gap-1 text-red-600 font-bold">
+                            <ShieldAlert size={16} /> {s.fraud}x
+                          </div>
+                        ) : (
+                          <span className="text-green-500">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
